@@ -192,11 +192,15 @@ class AlogWatcher:
         for timer in self._timers.values():
             timer.cancel()
         self._timers.clear()
-        for task in list(self._tasks):
+        tasks = list(self._tasks)
+        for task in tasks:
             task.cancel()
-        for task in list(self._tasks):
+        for task in tasks:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+        # Done-callbacks (`discard`) run on a later loop tick, so an already-finished task can
+        # still be in the set here; drop them explicitly.
+        self._tasks.difference_update(tasks)
         if self._observer is not None:
             self._observer.stop()
             await asyncio.to_thread(self._observer.join, 5.0)

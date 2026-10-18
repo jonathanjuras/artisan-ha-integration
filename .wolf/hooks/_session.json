@@ -359,6 +359,12 @@
       "action": "edit",
       "tokens": 147,
       "at": "2026-10-18T15:10:31.131Z"
+    },
+    {
+      "file": "/home/jonathan/Projects/Personal/artisan-ha-integration/bridge/src/artisan_ha_bridge/alog_watch.py",
+      "action": "edit",
+      "tokens": 115,
+      "at": "2026-10-18T15:12:42.929Z"
     }
   ],
   "edit_counts": {
@@ -403,7 +409,7 @@
     "tests/test_diagnostics.py": 1,
     "bridge/src/artisan_ha_bridge/discovery.py": 1,
     "bridge/src/artisan_ha_bridge/app.py": 1,
-    "bridge/src/artisan_ha_bridge/alog_watch.py": 1,
+    "bridge/src/artisan_ha_bridge/alog_watch.py": 2,
     "bridge/src/artisan_ha_bridge/replay.py": 1,
     "bridge/src/artisan_ha_bridge/actions.py": 1,
     "bridge/src/artisan_ha_bridge/doctor.py": 1,

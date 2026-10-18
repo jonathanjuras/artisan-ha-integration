@@ -1,7 +1,7 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-10-18T15:10:31.119Z
-> Files: 515 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-10-18T15:12:42.922Z
+> Files: 516 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
@@ -775,3 +775,7 @@
 ## .venv/lib/python3.14/site-packages/anyio/_backends/
 
 - `__init__.py` (~0 tok)
+
+## bridge/src/artisan_ha_bridge/
+
+- `alog_watch.py` — Optional `.alog` enrichment (spec 4.3, `[watch]` extra). (~2352 tok)
