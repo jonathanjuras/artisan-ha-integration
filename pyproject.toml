@@ -1,0 +1,59 @@
+# Tool configuration only; this file does not define a package. The bridge
+# under bridge/ has its own pyproject.toml.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+target-version = "py314"
+extend-exclude = ["bridge"]
+
+[tool.ruff.lint]
+select = [
+  "A", "ASYNC", "B", "BLE", "C4", "D", "E", "F", "FURB", "G", "I", "LOG",
+  "N", "PERF", "PGH", "PIE", "PL", "PT", "RET", "RSE", "RUF", "S", "SIM",
+  "SLF", "T20", "TID", "TRY", "UP", "W",
+]
+ignore = [
+  "D202",    # blank line after docstring, conflicts with formatter
+  "D203",    # conflicts with D211
+  "D213",    # conflicts with D212
+  "E501",    # line length is the formatter's job
+  "PLR0913", # HA callbacks have fixed, long signatures
+  "PLR2004", # magic values are fine in protocol code and tests
+  "N818",    # HA convention: CannotConnect / InvalidAuth
+  "TRY003",  # short messages on custom exceptions are fine
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+  "ASYNC109", # wait_for() polls fake-bridge state, there is nothing to await
+  "ASYNC110",
+  "D",
+  "PLR0915",
+  "S101",
+  "S105",     # test tokens
+  "S106",
+  "SLF001",
+]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["homeassistant", "custom_components"]
+combine-as-imports = true
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+warn_unreachable = true
+packages = ["custom_components.artisan"]
+explicit_package_bases = true
+
+# HA re-exports many public names through `# noqa: F401` imports without
+# __all__ (e.g. homeassistant.components.binary_sensor.BinarySensorDeviceClass),
+# which strict mode's no_implicit_reexport would reject.
+[[tool.mypy.overrides]]
+module = ["homeassistant.*"]
+implicit_reexport = true

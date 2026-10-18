@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS LaunchAgent for artisan-ha-bridge. launchd does not expand "~" or $HOME, so replace
+  YOUR_USER with your account name (or run the sed command from the README), then:
+    cp org.artisan-ha-bridge.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/org.artisan-ha-bridge.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>org.artisan-ha-bridge</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/YOUR_USER/.local/bin/artisan-ha-bridge</string>
+        <string>run</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <!-- Wait 5 s between restarts. -->
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>StandardOutPath</key>
+    <string>/Users/YOUR_USER/Library/Logs/artisan-ha-bridge.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/YOUR_USER/Library/Logs/artisan-ha-bridge.log</string>
+</dict>
+</plist>

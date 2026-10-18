@@ -1,0 +1,17 @@
+# systemd user unit for artisan-ha-bridge.
+#   cp artisan-ha-bridge.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now artisan-ha-bridge
+# Logs: journalctl --user -u artisan-ha-bridge -f
+
+[Unit]
+Description=Artisan to Home Assistant bridge
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/artisan-ha-bridge run
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

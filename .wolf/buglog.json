@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "bugs": [
+    {
+      "id": "bug-001",
+      "timestamp": "2026-10-17T16:32:51.898Z",
+      "error_message": "Incorrect value in code",
+      "file": "custom_components/artisan/client.py",
+      "root_cause": "Had \"Open the socket and return it once the bridge has",
+      "fix": "Changed to \"Open the authenticated socket; the bridge answers",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-10-17T16:32:51.898Z"
+    },
+    {
+      "id": "bug-002",
+      "timestamp": "2026-10-17T16:56:40.658Z",
+      "error_message": "Significant refactor of ",
+      "file": "bridge/README.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 5→18 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-10-17T16:56:40.659Z"
+    }
+  ]
+}

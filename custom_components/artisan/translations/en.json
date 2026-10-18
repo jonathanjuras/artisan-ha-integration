@@ -1,0 +1,172 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Connect to an Artisan bridge",
+        "description": "Enter the address of the computer running artisan-ha-bridge and the token printed by `artisan-ha-bridge init`.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "token": "Token"
+        },
+        "data_description": {
+          "host": "Hostname or IP address of the computer running the bridge.",
+          "port": "Port of the bridge's Home Assistant server (default 8765).",
+          "token": "The `ha.token` value from the bridge's config.yaml."
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Discovered Artisan bridge",
+        "description": "Found {name} at {host}:{port}. Enter its token to add it.",
+        "data": {
+          "token": "Token"
+        },
+        "data_description": {
+          "token": "The `ha.token` value from the bridge's config.yaml."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate the Artisan bridge",
+        "description": "{name} rejected the stored token. Enter the current token from the bridge's config.yaml.",
+        "data": {
+          "token": "Token"
+        },
+        "data_description": {
+          "token": "The `ha.token` value from the bridge's config.yaml."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the bridge.",
+      "invalid_auth": "The bridge rejected the token.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This bridge is already configured.",
+      "not_artisan_bridge": "The discovered service is not an Artisan bridge.",
+      "reauth_successful": "Reauthentication was successful.",
+      "unique_id_mismatch": "The bridge at this address is not the configured bridge."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Artisan bridge options",
+        "data": {
+          "sample_interval_s": "Sample interval",
+          "ror_precision": "Rate of rise precision"
+        },
+        "data_description": {
+          "sample_interval_s": "Minimum time between state updates of the temperature, rate of rise, roast time, development time and DTR sensors. Higher values store fewer states.",
+          "ror_precision": "Number of decimals of the rate of rise sensors."
+        }
+      }
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "on": "Monitoring started (ON)",
+      "start": "Recording started (START)",
+      "charge": "Beans charged",
+      "dry": "Drying ended",
+      "fcs": "First crack started",
+      "fce": "First crack ended",
+      "scs": "Second crack started",
+      "sce": "Second crack ended",
+      "drop": "Beans dropped",
+      "cool": "Cooling ended",
+      "off": "Monitoring stopped (OFF)",
+      "reset": "Roast reset",
+      "alert": "Artisan alert"
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "artisan_online": {
+        "name": "Artisan running"
+      },
+      "connected": {
+        "name": "Bridge connected"
+      },
+      "roasting": {
+        "name": "Roasting"
+      }
+    },
+    "event": {
+      "roast_event": {
+        "name": "Roast event",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "on": "Monitoring started",
+              "start": "Recording started",
+              "charge": "Charge",
+              "dry": "Dry end",
+              "fcs": "First crack start",
+              "fce": "First crack end",
+              "scs": "Second crack start",
+              "sce": "Second crack end",
+              "drop": "Drop",
+              "cool": "Cool end",
+              "off": "Monitoring stopped",
+              "reset": "Reset",
+              "alert": "Alert"
+            }
+          }
+        }
+      }
+    },
+    "sensor": {
+      "bt": {
+        "name": "Bean temperature"
+      },
+      "bt_ror": {
+        "name": "BT rate of rise"
+      },
+      "charge_bt": {
+        "name": "Charge temperature"
+      },
+      "control": {
+        "name": "{channel}"
+      },
+      "dev_time": {
+        "name": "Development time"
+      },
+      "drop_bt": {
+        "name": "Drop temperature"
+      },
+      "dtr": {
+        "name": "Development time ratio"
+      },
+      "et": {
+        "name": "Environment temperature"
+      },
+      "et_ror": {
+        "name": "ET rate of rise"
+      },
+      "fcs_bt": {
+        "name": "First crack temperature"
+      },
+      "last_roast": {
+        "name": "Last roast completed"
+      },
+      "phase": {
+        "name": "Phase",
+        "state": {
+          "off": "Off",
+          "monitoring": "Monitoring",
+          "recording": "Recording",
+          "drying": "Drying",
+          "maillard": "Maillard",
+          "development": "Development",
+          "cooling": "Cooling",
+          "finished": "Finished"
+        }
+      },
+      "roast_time": {
+        "name": "Roast time"
+      }
+    }
+  }
+}

@@ -1,0 +1,268 @@
+name: ci
+
+# Single pipeline (build → test → release). Combined rather than split so the release job sits
+# behind a `needs:` barrier over BOTH components and always ships a matching bridge + integration.
+#
+# PRs: build + test only (bridge and Home Assistant integration).
+# push to main / manual run on main: build + test, then refresh ONE rolling `latest` release
+#               (recreated each build) carrying the Linux installer, the bridge bundle, the
+#               systemd unit, the integration zip and the rendered setup guide.
+#
+# There are no container images and no deploy target: the bridge runs on the Artisan laptop
+# (installed by install.sh from this release) and the integration installs through HACS.
+# So there are no `<service>-publish` jobs and no SSH redeploy step. Both components are fast,
+# so there is no `changes` filter either; everything always builds.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # The runner image's distro Python is too old for Home Assistant 2026.10 (needs >= 3.14.2),
+  # so each job installs uv and lets it fetch the exact interpreter. Pinned for reproducibility.
+  UV_VERSION: "0.13.1"
+  BRIDGE_PYTHON: "3.12"
+  BRIDGE_PYTHON_FLOOR: "3.11"
+  HA_PYTHON: "3.14"
+
+jobs:
+  bridge-build-test:
+    runs-on: runner
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        run: |
+          set -eu
+          curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install
+        run: |
+          set -eu
+          uv venv --python "$BRIDGE_PYTHON" .venv
+          uv pip install --python .venv -e '.[dev,watch]'
+        working-directory: bridge
+      - name: Lint
+        run: |
+          set -eu
+          .venv/bin/ruff format --check .
+          .venv/bin/ruff check .
+        working-directory: bridge
+      - name: Typecheck
+        run: .venv/bin/mypy
+        working-directory: bridge
+      - name: Test
+        # pytest config enforces 100% branch coverage on state.py (spec M1).
+        run: .venv/bin/pytest
+        working-directory: bridge
+      - name: Test (Python floor)
+        # The laptop may run an older distro Python (Debian 12 ships 3.11); prove the floor works.
+        run: |
+          set -eu
+          uv venv --python "$BRIDGE_PYTHON_FLOOR" .venv-floor
+          uv pip install --python .venv-floor -e '.[dev,watch]'
+          .venv-floor/bin/pytest -p no:cacheprovider
+        working-directory: bridge
+      - name: Build wheel
+        run: uv build --wheel --out-dir dist
+        working-directory: bridge
+      - name: Upload wheel artifact
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v3
+        with:
+          name: bridge-wheel
+          path: bridge/dist/*.whl
+
+  integration-build-test:
+    runs-on: runner
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        run: |
+          set -eu
+          curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install
+        run: |
+          set -eu
+          uv venv --python "$HA_PYTHON" .venv
+          # On a musl (Alpine) runner, Home Assistant's own musllinux wheel index supplies the
+          # compiled dependencies PyPI lacks, so nothing has to build from source here.
+          extra=""
+          if [ -f /etc/alpine-release ]; then
+            extra="--find-links https://wheels.home-assistant.io/musllinux/"
+          fi
+          # shellcheck disable=SC2086 # $extra is intentionally word-split
+          uv pip install --python .venv $extra -r requirements_test.txt
+      - name: Lint
+        run: |
+          set -eu
+          .venv/bin/ruff format --check custom_components tests
+          .venv/bin/ruff check custom_components tests
+      - name: Typecheck
+        run: .venv/bin/mypy custom_components
+      - name: Test
+        run: .venv/bin/pytest tests
+      - name: hassfest
+        # Same validation as home-assistant/actions/hassfest. Copied into the container instead of
+        # bind-mounted: the job runs in a container, so a host path mount would point at the wrong
+        # filesystem. (hacs/action needs the GitHub API, so it runs on the GitHub mirror only —
+        # see .github/workflows/validate.yml.)
+        run: |
+          set -eu
+          docker pull ghcr.io/home-assistant/hassfest:latest
+          cid=$(docker create ghcr.io/home-assistant/hassfest:latest)
+          trap 'docker rm -f "$cid" >/dev/null' EXIT
+          docker cp custom_components "$cid:/github/workspace/custom_components"
+          docker start -a "$cid"
+      - name: Check hacs.json
+        # Minimal stand-in for hacs/action's manifest check, which cannot run against Forgejo.
+        run: |
+          set -eu
+          jq -e '.name and .homeassistant' hacs.json
+          [ "$(find custom_components -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 1 ] \
+            || { echo "HACS allows exactly one integration under custom_components/"; exit 1; }
+
+  # Barrier over both components: assembles the laptop bundle and the integration zip, renders
+  # the installer and setup guide with this release's stable URLs, and refreshes the single
+  # rolling `latest` release. Every asset is rebuilt from this commit, so nothing is carried
+  # forward from the previous release.
+  release:
+    needs: [bridge-build-test, integration-build-test]
+    if: >-
+      !cancelled()
+      && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+      && needs.bridge-build-test.result == 'success'
+      && needs.integration-build-test.result == 'success'
+    runs-on: runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download wheel artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: bridge-wheel
+          path: dist/wheel
+
+      - name: Render release artifacts
+        env:
+          GITHUB_MIRROR_URL: ${{ vars.GITHUB_MIRROR_URL }}
+        run: |
+          set -eu
+          BASE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/latest"
+          PAGE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/latest"
+          # HACS only reads GitHub, so the guide points at the mirror when one is configured.
+          MIRROR="${GITHUB_MIRROR_URL:-<GitHub mirror not configured: set the GITHUB_MIRROR_URL Forgejo variable>}"
+          mkdir -p dist
+
+          # Installer with this release's download URL baked in (curl | bash needs no arguments).
+          sed -e "s|__RELEASE_BASE_URL__|${BASE_URL}|g" install/install.sh > dist/install.sh
+          chmod +x dist/install.sh
+          echo '----- rendered dist/install.sh (head) -----'
+          head -n 25 dist/install.sh
+
+          # Setup guide: the step-by-step guide followed by the Home Assistant reference.
+          {
+            sed -e "s|__RELEASE_BASE_URL__|${BASE_URL}|g" \
+                -e "s|__RELEASE_PAGE_URL__|${PAGE_URL}|g" \
+                -e "s|__GITHUB_REPO_URL__|${MIRROR}|g" \
+                -e "s|__COMMIT__|${GITHUB_SHA}|g" \
+                docs/SETUP.md
+            printf '\n---\n\n'
+            cat docs/home-assistant.md
+          } > dist/SETUP.md
+          echo '----- rendered dist/SETUP.md (head) -----'
+          head -n 20 dist/SETUP.md
+
+          # Laptop bundle: wheel + installer + every OS's service file + docs, under one top-level
+          # directory so `tar -xzf` never scatters files into the current directory.
+          bundle=dist/bundle/artisan-ha-bridge
+          mkdir -p "$bundle"
+          cp dist/wheel/*.whl "$bundle/"
+          cp dist/install.sh dist/SETUP.md "$bundle/"
+          cp bridge/service/* "$bundle/"
+          cp bridge/README.md "$bundle/README.md"
+          cp LICENSE "$bundle/"
+          tar -czf dist/artisan-ha-bridge.tar.gz -C dist/bundle artisan-ha-bridge
+          echo '----- dist/artisan-ha-bridge.tar.gz -----'
+          tar -tzf dist/artisan-ha-bridge.tar.gz
+
+          cp bridge/service/artisan-ha-bridge.service dist/artisan-ha-bridge.service
+
+          # Manual-install zip mirrors the HA config dir layout: unzip in <config>/.
+          zip -qr dist/artisan-integration.zip custom_components/artisan -x '*/__pycache__/*'
+          echo '----- dist/artisan-integration.zip -----'
+          unzip -l dist/artisan-integration.zip
+
+      - name: Refresh rolling "latest" release
+        env:
+          # Forgejo's automatic token has repo write scope (releases). Swap for a PAT secret if
+          # your instance restricts the auto-token.
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          API="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
+          AUTH="Authorization: token ${TOKEN}"
+          TAGNAME="latest"
+          BASE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${TAGNAME}"
+
+          # ONE rolling release instead of a per-build one: the previous `latest` release + tag are
+          # torn down and recreated at this commit, so the tag/assets always describe the newest
+          # main build and old releases never pile up.
+          EXISTING=$(curl -sSL -H "$AUTH" "${API}/releases/tags/${TAGNAME}" || true)
+          RID=$(printf '%s' "$EXISTING" | jq -r '.id // empty' 2>/dev/null || true)
+          if [ -n "$RID" ]; then
+            curl -sfSL -o /dev/null -X DELETE -H "$AUTH" "${API}/releases/${RID}"
+            echo "Deleted previous ${TAGNAME} release (id=${RID})."
+          fi
+          # Drop the tag too — creating the release below re-points it at THIS commit. Ignore a 404
+          # (nothing to delete on the very first run).
+          curl -sSL -o /dev/null -X DELETE -H "$AUTH" "${API}/tags/${TAGNAME}" || true
+
+          WHEEL=$(basename dist/wheel/*.whl)
+          VERSION=$(printf '%s' "$WHEEL" | cut -d- -f2)
+          BODY="Rolling latest build — commit ${GITHUB_SHA} (run ${GITHUB_RUN_NUMBER}). Bridge ${VERSION}.
+
+          ## Install the bridge (Linux, as the user running Artisan)
+
+          \`\`\`sh
+          curl -fsSL ${BASE_URL}/install.sh | bash
+          \`\`\`
+
+          Then follow [SETUP.md](${BASE_URL}/SETUP.md) to configure Artisan and Home Assistant.
+
+          | Asset | Purpose |
+          |---|---|
+          | \`install.sh\` | Linux installer / upgrader / uninstaller (systemd --user service) |
+          | \`artisan-ha-bridge.tar.gz\` | Bridge wheel (\`${WHEEL}\`), installer, service files, README |
+          | \`artisan-ha-bridge.service\` | systemd --user unit |
+          | \`artisan-integration.zip\` | Home Assistant integration (manual install; HACS uses the GitHub mirror) |
+          | \`SETUP.md\` | Full setup guide |"
+
+          # Build the payload with jq — the body carries newlines and backticks, which break
+          # hand-interpolated JSON. Keep curl's response so a failure prints Forgejo's error body.
+          RESP=$(jq -n --arg tag "$TAGNAME" --arg sha "$GITHUB_SHA" --arg body "$BODY" \
+              '{tag_name: $tag, target_commitish: $sha, name: $tag, body: $body}' \
+            | curl -sSL -X POST "${API}/releases" -H "$AUTH" -H "Content-Type: application/json" --data-binary @-)
+          RID=$(printf '%s' "$RESP" | jq -r '.id' 2>/dev/null || true)
+          # jq swallows curl's exit status through the pipe, so assert on the parsed id.
+          [ -n "$RID" ] && [ "$RID" != null ] || { echo "Failed to create the ${TAGNAME} release: $RESP"; exit 1; }
+          echo "Refreshed release ${TAGNAME} (id=${RID}) at ${GITHUB_SHA}"
+
+          # Fixed asset names, so `latest`'s download URLs are stable and install.sh can always
+          # curl the same paths.
+          upload() {
+            out=$(curl -sSL -w '\n%{http_code}' -X POST "${API}/releases/${RID}/assets?name=$1" \
+              -H "$AUTH" -F "attachment=@dist/$1;type=$2")
+            code=$(printf '%s' "$out" | tail -n 1)
+            case "$code" in
+              2??) echo "Attached $1" ;;
+              *) echo "Failed to attach $1 (HTTP $code): $(printf '%s' "$out" | sed '$d')"; exit 1 ;;
+            esac
+          }
+          upload install.sh text/x-shellscript
+          upload artisan-ha-bridge.tar.gz application/gzip
+          upload artisan-ha-bridge.service text/plain
+          upload artisan-integration.zip application/zip
+          upload SETUP.md text/markdown

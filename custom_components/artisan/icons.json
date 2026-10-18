@@ -1,0 +1,59 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "artisan_online": {
+        "default": "mdi:application-outline",
+        "state": {
+          "on": "mdi:application"
+        }
+      },
+      "roasting": {
+        "default": "mdi:fire-off",
+        "state": {
+          "on": "mdi:fire"
+        }
+      }
+    },
+    "event": {
+      "roast_event": {
+        "default": "mdi:coffee-maker-outline"
+      }
+    },
+    "sensor": {
+      "bt_ror": {
+        "default": "mdi:chart-line-variant"
+      },
+      "control": {
+        "default": "mdi:tune-vertical"
+      },
+      "dev_time": {
+        "default": "mdi:timer-sand"
+      },
+      "dtr": {
+        "default": "mdi:percent-outline"
+      },
+      "et_ror": {
+        "default": "mdi:chart-line-variant"
+      },
+      "last_roast": {
+        "default": "mdi:coffee-outline"
+      },
+      "phase": {
+        "default": "mdi:coffee",
+        "state": {
+          "cooling": "mdi:snowflake",
+          "development": "mdi:fire",
+          "drying": "mdi:water-off",
+          "finished": "mdi:check-circle-outline",
+          "maillard": "mdi:fire",
+          "monitoring": "mdi:eye-outline",
+          "off": "mdi:power-off",
+          "recording": "mdi:record-rec"
+        }
+      },
+      "roast_time": {
+        "default": "mdi:timer-outline"
+      }
+    }
+  }
+}
