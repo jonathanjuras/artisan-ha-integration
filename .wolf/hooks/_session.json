@@ -353,12 +353,18 @@
       "action": "edit",
       "tokens": 187,
       "at": "2026-10-17T16:56:40.658Z"
+    },
+    {
+      "file": "/home/jonathan/Projects/Personal/artisan-ha-integration/.forgejo/workflows/ci.yml",
+      "action": "edit",
+      "tokens": 147,
+      "at": "2026-10-18T15:10:31.131Z"
     }
   ],
   "edit_counts": {
     "install/install.sh": 1,
     "docs/SETUP.md": 1,
-    ".forgejo/workflows/ci.yml": 1,
+    ".forgejo/workflows/ci.yml": 2,
     "custom_components/artisan/const.py": 1,
     "README.md": 1,
     "custom_components/artisan/models.py": 2,

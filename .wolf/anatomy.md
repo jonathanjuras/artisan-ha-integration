@@ -1,6 +1,6 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-10-17T17:01:52.048Z
+> Auto-maintained by OpenWolf. Last scanned: 2026-10-18T15:10:31.119Z
 > Files: 515 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
@@ -24,7 +24,7 @@
 
 ## .forgejo/workflows/
 
-- `ci.yml` — CI: ci (~3536 tok)
+- `ci.yml` — CI: ci (~5438 tok)
 
 ## .github/workflows/
 
