@@ -6,7 +6,13 @@ name: ci
 # PRs: build + test only (bridge and Home Assistant integration).
 # push to main / manual run on main: build + test, then refresh ONE rolling `latest` release
 #               (recreated each build) carrying the Linux installer, the bridge bundle, the
-#               systemd unit, the integration zip and the rendered setup guide.
+#               systemd unit, the integration zip and the rendered setup guide; and push the
+#               integration to the GitHub mirror (HACS only installs from GitHub) as a new
+#               versioned GitHub release.
+#
+# Integration version: manifest.json in this repo holds the base version (e.g. 0.1.0). Each main
+# build publishes `<base>.<run number>` (e.g. 0.1.0.42) so HACS and Home Assistant see a new
+# version on every push without anyone bumping it in source.
 #
 # There are no container images and no deploy target: the bridge runs on the Artisan laptop
 # (installed by install.sh from this release) and the integration installs through HACS.
@@ -26,6 +32,7 @@ env:
   BRIDGE_PYTHON: "3.12"
   BRIDGE_PYTHON_FLOOR: "3.11"
   HA_PYTHON: "3.14"
+  MANIFEST: custom_components/artisan/manifest.json
 
 jobs:
   bridge-build-test:
@@ -145,15 +152,28 @@ jobs:
           name: bridge-wheel
           path: dist/wheel
 
+      - name: Stamp integration version
+        # Same `<base>.<run number>` as the github-mirror job, so the zip matches what HACS installs.
+        run: |
+          set -eu
+          VERSION="$(jq -r .version "$MANIFEST").${GITHUB_RUN_NUMBER}"
+          sed -i -E "s/(\"version\": \")[^\"]*\"/\1${VERSION}\"/" "$MANIFEST"
+          [ "$(jq -r .version "$MANIFEST")" = "$VERSION" ] || { echo "Failed to stamp ${VERSION}"; exit 1; }
+          echo "Integration version ${VERSION}"
+
       - name: Render release artifacts
         env:
-          GITHUB_MIRROR_URL: ${{ vars.GITHUB_MIRROR_URL }}
+          MIRROR_REPOSITORY: ${{ vars.MIRROR_REPOSITORY }}
         run: |
           set -eu
           BASE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/latest"
           PAGE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/latest"
           # HACS only reads GitHub, so the guide points at the mirror when one is configured.
-          MIRROR="${GITHUB_MIRROR_URL:-<GitHub mirror not configured: set the GITHUB_MIRROR_URL Forgejo variable>}"
+          if [ -n "${MIRROR_REPOSITORY:-}" ]; then
+            MIRROR="https://github.com/${MIRROR_REPOSITORY}"
+          else
+            MIRROR="<GitHub mirror not configured: set the MIRROR_REPOSITORY Forgejo variable>"
+          fi
           mkdir -p dist
 
           # Installer with this release's download URL baked in (curl | bash needs no arguments).
@@ -222,7 +242,8 @@ jobs:
 
           WHEEL=$(basename dist/wheel/*.whl)
           VERSION=$(printf '%s' "$WHEEL" | cut -d- -f2)
-          BODY="Rolling latest build — commit ${GITHUB_SHA} (run ${GITHUB_RUN_NUMBER}). Bridge ${VERSION}.
+          HA_VERSION=$(jq -r .version "$MANIFEST")
+          BODY="Rolling latest build — commit ${GITHUB_SHA} (run ${GITHUB_RUN_NUMBER}). Bridge ${VERSION}, integration ${HA_VERSION}.
 
           ## Install the bridge (Linux, as the user running Artisan)
 
@@ -266,3 +287,90 @@ jobs:
           upload artisan-ha-bridge.service text/plain
           upload artisan-integration.zip application/zip
           upload SETUP.md text/markdown
+
+  # HACS only installs from GitHub, so every main build pushes this repository to a GitHub mirror
+  # with the integration version stamped (`<base>.<run number>`) and publishes it as a GitHub
+  # release. HACS reads releases, so each push shows up as an update in Home Assistant.
+  #
+  # The mirror's `main` is this commit plus ONE generated "Release <version>" commit (the version
+  # bump), force-pushed every build: the source repo never carries the bump, and the previous
+  # bump commit is replaced instead of piling up. Each version tag keeps its own commit alive, so
+  # older HACS releases stay installable. The mirror is CI-owned; never commit to it directly.
+  #
+  # Config (repo Settings > Actions):
+  #   variable MIRROR_REPOSITORY  `<owner>/<repo>` on github.com, e.g. dane/artisan-ha-integration
+  #   secret   MIRROR_TOKEN       GitHub fine-grained PAT for that repo only, with
+  #                               Contents: read & write (push, tags, releases) and
+  #                               Workflows: read & write (the push includes .github/workflows/)
+  # Unconfigured, the job logs a warning and skips instead of failing the build.
+  github-mirror:
+    needs: [bridge-build-test, integration-build-test]
+    if: >-
+      !cancelled()
+      && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+      && needs.bridge-build-test.result == 'success'
+      && needs.integration-build-test.result == 'success'
+    runs-on: runner
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the mirror gets the full history, not a shallow graft
+
+      - name: Push to GitHub mirror and publish release
+        env:
+          MIRROR_REPOSITORY: ${{ vars.MIRROR_REPOSITORY }}
+          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
+        run: |
+          set -eu
+          if [ -z "${MIRROR_REPOSITORY:-}" ] || [ -z "${MIRROR_TOKEN:-}" ]; then
+            echo "WARNING: MIRROR_REPOSITORY variable or MIRROR_TOKEN secret not set — skipping the GitHub mirror (HACS will not see this build)."
+            exit 0
+          fi
+
+          BASE=$(jq -r .version "$MANIFEST")
+          VERSION="${BASE}.${GITHUB_RUN_NUMBER}"
+          TAG="v${VERSION}"
+
+          # Stamp only the version line so manifest.json keeps its formatting and key order
+          # (hassfest checks the order), then assert the result parses to the intended version.
+          sed -i -E "s/(\"version\": \")[^\"]*\"/\1${VERSION}\"/" "$MANIFEST"
+          [ "$(jq -r .version "$MANIFEST")" = "$VERSION" ] || { echo "Failed to stamp ${VERSION} into ${MANIFEST}"; exit 1; }
+
+          git config user.name "artisan-ha-integration CI"
+          git config user.email "ci@users.noreply.github.com"
+          git commit -q -m "Release ${VERSION}" -m "Source: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}" -- "$MANIFEST"
+          git tag -a "$TAG" -m "Release ${VERSION}"
+
+          # Credentials go in a header scoped to github.com, never into the remote URL, so they
+          # cannot leak through `git remote -v` or error messages. checkout's own Forgejo header is
+          # scoped to the Forgejo host and does not interfere.
+          BASIC=$(printf 'x-access-token:%s' "$MIRROR_TOKEN" | base64 | tr -d '\n')
+          echo "::add-mask::${BASIC}"
+          REMOTE="https://github.com/${MIRROR_REPOSITORY}.git"
+          git -c "http.https://github.com/.extraheader=Authorization: basic ${BASIC}" \
+            push --force "$REMOTE" HEAD:refs/heads/main "refs/tags/${TAG}"
+          echo "Pushed ${TAG} and main to ${REMOTE}"
+
+          # HACS lists GitHub *releases* (not bare tags) as versions.
+          API="https://api.github.com/repos/${MIRROR_REPOSITORY}"
+          GH_AUTH="Authorization: Bearer ${MIRROR_TOKEN}"
+          # A re-run of the same run number re-pushes the same tag; its release already exists.
+          if curl -sfSL -o /dev/null -H "$GH_AUTH" -H "Accept: application/vnd.github+json" \
+              "${API}/releases/tags/${TAG}"; then
+            echo "GitHub release ${TAG} already exists (re-run); nothing to publish."
+            exit 0
+          fi
+          BODY="Automated build of [${GITHUB_SHA}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}) (run ${GITHUB_RUN_NUMBER}).
+
+          Bridge installer, bundle and setup guide: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/latest"
+          RESP=$(jq -n --arg tag "$TAG" --arg name "$VERSION" --arg body "$BODY" \
+              '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false, make_latest: "true"}' \
+            | curl -sSL -X POST "${API}/releases" \
+                -H "$GH_AUTH" \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                --data-binary @-)
+          RID=$(printf '%s' "$RESP" | jq -r '.id' 2>/dev/null || true)
+          # jq swallows curl's exit status through the pipe, so assert on the parsed id.
+          [ -n "$RID" ] && [ "$RID" != null ] || { echo "Failed to create GitHub release ${TAG}: $RESP"; exit 1; }
+          echo "Published GitHub release ${TAG} (id=${RID})"

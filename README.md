@@ -79,7 +79,8 @@ Try the bridge without a roaster: `artisan-ha-bridge replay bridge/tests/fixture
 
 `.forgejo/workflows/ci.yml` runs on every push and pull request: bridge lint, `mypy --strict`
 and tests (on Python 3.12 and 3.11), integration lint, typecheck, tests and hassfest. Each push
-to `main` recreates the rolling **`latest`** release with stable asset URLs:
+to `main` recreates the rolling **`latest`** release with stable asset URLs, and publishes the
+integration to the GitHub mirror (below):
 
 | Asset | Purpose |
 |---|---|
@@ -89,10 +90,29 @@ to `main` recreates the rolling **`latest`** release with stable asset URLs:
 | `artisan-integration.zip` | Integration for manual installs |
 | `SETUP.md` | Rendered setup guide |
 
-HACS only reads GitHub, so the HACS path needs a GitHub push mirror of this repository
-(Forgejo: Settings > Repository > Mirror settings > Push mirror). Set the Forgejo variable
-`GITHUB_MIRROR_URL` to the mirror's URL so the rendered `SETUP.md` points at it. The mirror has no
-releases, so HACS tracks commits on the default branch.
+### GitHub mirror (HACS)
+
+HACS only installs from GitHub, so the `github-mirror` job pushes every `main` build to a GitHub
+repository and publishes it as a GitHub release that HACS picks up as an update.
+
+- **Version:** `manifest.json` in this repo holds the base version (`0.1.0`). The mirror gets
+  `<base>.<run number>` (e.g. `0.1.0.42`) in a generated `Release <version>` commit on top of the
+  source commit, tagged `v<version>`. The source repo is never bumped. Raise the base version in
+  source for real version changes.
+- **History:** the mirror's `main` is force-pushed every build (source history + one release
+  commit), so never commit to the mirror. Version tags keep older releases installable.
+- **Setup (Forgejo repo > Settings > Actions):**
+
+  | Kind | Name | Value |
+  |---|---|---|
+  | Variable | `MIRROR_REPOSITORY` | `<owner>/<repo>` on github.com, e.g. `dane/artisan-ha-integration` |
+  | Secret | `MIRROR_TOKEN` | GitHub fine-grained PAT scoped to that repository only, with **Contents: Read and write** and **Workflows: Read and write** (the push includes `.github/workflows/`) |
+
+  Create the GitHub repository empty (no README or license) first. Without the variable or the
+  secret the job logs a warning and skips; nothing else fails. The rendered `SETUP.md` points HACS
+  users at `https://github.com/<MIRROR_REPOSITORY>`.
+- **Version ordering:** the run number only grows while the workflow keeps its name. If it is
+  ever reset, raise the base version in `manifest.json` so new builds still sort above old ones.
 
 ## License
 

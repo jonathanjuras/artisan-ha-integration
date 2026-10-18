@@ -200,8 +200,8 @@ to GitHub at **__GITHUB_REPO_URL__**.
 3. Search HACS for **Artisan Roaster Scope**, open it and click **Download**.
 4. Restart Home Assistant (**Settings > System > ⋮ > Restart Home Assistant**).
 
-The GitHub mirror has no releases, so HACS tracks the default branch and offers an update
-whenever new commits land.
+Every build publishes a GitHub release with version `<base>.<build>` (for example `0.1.0.42`),
+so HACS offers an update whenever a new build lands.
 
 ### Option B: Manual
 
