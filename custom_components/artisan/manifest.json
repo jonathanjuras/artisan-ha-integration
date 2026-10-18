@@ -9,6 +9,6 @@
   "iot_class": "local_push",
   "issue_tracker": "https://git.jur.as/dane/artisan-ha-integration/issues",
   "requirements": [],
-  "version": "0.1.0",
+  "version": "0.1.0.2",
   "zeroconf": ["_artisan-bridge._tcp.local."]
 }
